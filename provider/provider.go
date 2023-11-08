@@ -3,6 +3,9 @@ package provider
 import (
 	"context"
 	"fmt"
+	"net/http"
+	"time"
+
 	"github.com/docker/go-units"
 	boostapi "github.com/filecoin-project/boost/api"
 	"github.com/filecoin-project/boost/storagemarket/types"
@@ -11,13 +14,10 @@ import (
 	"github.com/filecoin-project/go-state-types/abi"
 	"github.com/filecoin-project/lotus/build"
 	chain_type "github.com/filecoin-project/lotus/chain/types"
-	"github.com/filswan/go-swan-lib/model"
 	"github.com/google/uuid"
 	"github.com/ipfs/go-cid"
 	"github.com/pkg/errors"
 	"golang.org/x/xerrors"
-	"net/http"
-	"time"
 )
 
 type Client struct {
@@ -44,7 +44,7 @@ func NewClient(authToken, apiUrl string) (*Client, jsonrpc.ClientCloser, error) 
 	}, closer, nil
 }
 
-func (pc *Client) GetDealInfoByDealUuid(ctx context.Context, dealUuid string) (*model.ProviderDealState, error) {
+func (pc *Client) GetDealInfoByDealUuid(ctx context.Context, dealUuid string) (*ProviderDealState, error) {
 	dealUid, err := uuid.Parse(dealUuid)
 	if err != nil {
 		return nil, errors.Wrap(err, fmt.Sprintf("dealUuid=[%s] parse failed", dealUid))
@@ -53,7 +53,7 @@ func (pc *Client) GetDealInfoByDealUuid(ctx context.Context, dealUuid string) (*
 	if err != nil {
 		return nil, err
 	}
-	var pds model.ProviderDealState
+	var pds ProviderDealState
 	pds.DealUuid = boostDeal.DealUuid.String()
 	pds.IsOffline = boostDeal.IsOffline
 	pds.DealDataRoot = boostDeal.DealDataRoot.String()
@@ -72,7 +72,7 @@ func (pc *Client) GetDealInfoByDealUuid(ctx context.Context, dealUuid string) (*
 	return &pds, nil
 }
 
-func (pc *Client) OfflineDealWithData(ctx context.Context, dealUuid, filePath string) (*model.ProviderDealRejectionInfo, error) {
+func (pc *Client) OfflineDealWithData(ctx context.Context, dealUuid, filePath string) (*ProviderDealRejectionInfo, error) {
 	dealUid, err := uuid.Parse(dealUuid)
 	if err != nil {
 		return nil, errors.Wrap(err, fmt.Sprintf("dealUuid=[%s] parse failed", dealUid))
@@ -81,7 +81,7 @@ func (pc *Client) OfflineDealWithData(ctx context.Context, dealUuid, filePath st
 	if err != nil {
 		return nil, err
 	}
-	return &model.ProviderDealRejectionInfo{
+	return &ProviderDealRejectionInfo{
 		Accepted: offlineDealWithData.Accepted,
 		Reason:   offlineDealWithData.Reason,
 	}, nil
