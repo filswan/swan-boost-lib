@@ -44,35 +44,7 @@ func NewClient(authToken, apiUrl string) (*Client, jsonrpc.ClientCloser, error) 
 	}, closer, nil
 }
 
-func (pc *Client) GetDealInfoByDealUuid(ctx context.Context, dealUuid string) (*ProviderDealState, error) {
-	dealUid, err := uuid.Parse(dealUuid)
-	if err != nil {
-		return nil, errors.Wrap(err, fmt.Sprintf("dealUuid=[%s] parse failed", dealUid))
-	}
-	boostDeal, err := pc.stub.BoostDeal(ctx, dealUid)
-	if err != nil {
-		return nil, err
-	}
-	var pds ProviderDealState
-	pds.DealUuid = boostDeal.DealUuid.String()
-	pds.IsOffline = boostDeal.IsOffline
-	pds.DealDataRoot = boostDeal.DealDataRoot.String()
-	pds.ChainDealID = uint64(boostDeal.ChainDealID)
-	pds.PublishCID = boostDeal.PublishCID.String()
-	pds.DealStatus = statusMessage(&types.DealStatusResponse{
-		DealUUID:  boostDeal.DealUuid,
-		Error:     boostDeal.Err,
-		IsOffline: boostDeal.IsOffline,
-		DealStatus: &types.DealStatus{
-			Error:  boostDeal.Err,
-			Status: boostDeal.Checkpoint.String(),
-		},
-	})
-	pds.Err = boostDeal.Err
-	return &pds, nil
-}
-
-func (pc *Client) OfflineDealWithData(ctx context.Context, dealUuid, filePath string) (*ProviderDealRejectionInfo, error) {
+func (pc *Client) OfflineDealWithData(ctx context.Context, dealUuid, filePath string) (*DealRejectionInfo, error) {
 	dealUid, err := uuid.Parse(dealUuid)
 	if err != nil {
 		return nil, errors.Wrap(err, fmt.Sprintf("dealUuid=[%s] parse failed", dealUid))
@@ -81,7 +53,7 @@ func (pc *Client) OfflineDealWithData(ctx context.Context, dealUuid, filePath st
 	if err != nil {
 		return nil, err
 	}
-	return &ProviderDealRejectionInfo{
+	return &DealRejectionInfo{
 		Accepted: offlineDealWithData.Accepted,
 		Reason:   offlineDealWithData.Reason,
 	}, nil
