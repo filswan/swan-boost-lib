@@ -44,12 +44,12 @@ func NewClient(authToken, apiUrl string) (*Client, jsonrpc.ClientCloser, error) 
 	}, closer, nil
 }
 
-func (pc *Client) OfflineDealWithData(ctx context.Context, dealUuid, filePath string) (*DealRejectionInfo, error) {
+func (pc *Client) OfflineDealWithData(ctx context.Context, dealUuid, filePath string, isDelte bool) (*DealRejectionInfo, error) {
 	dealUid, err := uuid.Parse(dealUuid)
 	if err != nil {
 		return nil, errors.Wrap(err, fmt.Sprintf("dealUuid=[%s] parse failed", dealUid))
 	}
-	offlineDealWithData, err := pc.stub.BoostOfflineDealWithData(ctx, dealUid, filePath, true)
+	offlineDealWithData, err := pc.stub.BoostOfflineDealWithData(ctx, dealUid, filePath, isDelte)
 	if err != nil {
 		return nil, err
 	}
