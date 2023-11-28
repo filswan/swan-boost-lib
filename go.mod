@@ -5,12 +5,12 @@ go 1.19
 require (
 	github.com/docker/go-units v0.5.0
 	github.com/fatih/color v1.13.0
-	github.com/filecoin-project/boost v0.0.0-20231101173716-1622d0ce2581
+	github.com/filecoin-project/boost v1.7.5-0.20231124125934-3233c510357f
 	github.com/filecoin-project/go-address v1.1.0
 	github.com/filecoin-project/go-cbor-util v0.0.1
 	github.com/filecoin-project/go-jsonrpc v0.3.1
-	github.com/filecoin-project/go-state-types v0.12.5
-	github.com/filecoin-project/lotus v1.25.0-rc1
+	github.com/filecoin-project/go-state-types v0.12.8
+	github.com/filecoin-project/lotus v1.25.0
 	github.com/filswan/go-swan-lib v0.2.142
 	github.com/google/uuid v1.3.0
 	github.com/ipfs/go-cid v0.4.1
@@ -51,7 +51,7 @@ require (
 	github.com/elastic/go-elasticsearch/v7 v7.14.0 // indirect
 	github.com/elastic/gosigar v0.14.2 // indirect
 	github.com/filecoin-project/boost-gfm v1.26.7 // indirect
-	github.com/filecoin-project/boost/extern/boostd-data v0.0.0-20231009154452-ca8daa2870f3 // indirect
+	github.com/filecoin-project/boost/extern/boostd-data v0.0.0-20231101173716-1622d0ce2581 // indirect
 	github.com/filecoin-project/filecoin-ffi v1.25.0-dev.1 // indirect
 	github.com/filecoin-project/go-amt-ipld/v2 v2.1.0 // indirect
 	github.com/filecoin-project/go-amt-ipld/v3 v3.1.0 // indirect
@@ -244,9 +244,4 @@ require (
 	gopkg.in/yaml.v2 v2.4.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 	lukechampine.com/blake3 v1.2.1 // indirect
-)
-
-exclude (
-	github.com/filecoin-project/boost v1.4.0
-	github.com/filecoin-project/boost v1.7.0
 )
