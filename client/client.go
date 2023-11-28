@@ -391,6 +391,7 @@ func (client *Client) sendDealToMiner(dealP DealParam) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	defer n.Host.Close()
 
 	ainfo := cliutil.ParseApiInfo(client.FullNodeApi)
 	addr, err := ainfo.DialArgs("v1")
