@@ -737,7 +737,7 @@ func CheckDealConfigByLotus(lotusClient *lotus.LotusClient, dealConfig *model.De
 }
 
 func CheckDealConfigByBoost(lotusClient *lotus.LotusClient, dealConfig *model.DealConfig) (pieceSize int64, epochPrice mbig.Int, err error) {
-	pieceSize, sectorSize := utils.CalculatePieceSize(dealConfig.FileSize, false)
+	pieceSize, sectorSize := utils.CalculatePieceSize(dealConfig.FileSize, true)
 	ask, err := GetClient(dealConfig.ClientRepo).WithClient(lotusClient).StorageAsk(dealConfig.MinerFid, int64(sectorSize), int64(dealConfig.Duration))
 	if err != nil {
 		logs.GetLogger().Error(err)
