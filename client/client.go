@@ -631,7 +631,7 @@ type DealParam struct {
 	Wallet               string `json:"wallet"`                  // wallet address to be used to initiate the deal
 }
 
-func (client *Client) StorageAsk(provider string) (*storagemarket.StorageAsk, error) {
+func (client *Client) StorageAsk(provider string, size int64, duration int64) (*AskInfo, error) {
 	ctx := context.Background()
 	n, err := clinode.Setup(client.ClientRepo)
 	if err != nil {
@@ -689,5 +689,27 @@ func (client *Client) StorageAsk(provider string) (*storagemarket.StorageAsk, er
 	logs.GetLogger().Infof("Verified Price per GiB: %s\n", chaintypes.FIL(ask.VerifiedPrice))
 	logs.GetLogger().Infof("Max Piece size: %s\n", chaintypes.SizeStr(chaintypes.NewInt(uint64(ask.MaxPieceSize))))
 	logs.GetLogger().Infof("Min Piece size: %s\n", chaintypes.SizeStr(chaintypes.NewInt(uint64(ask.MinPieceSize))))
-	return ask, nil
+	info := &AskInfo{
+		StorageAsk: *ask,
+	}
+	if size == 0 {
+		return info, nil
+	}
+	perEpoch := chaintypes.BigDiv(chaintypes.BigMul(ask.Price, chaintypes.NewInt(uint64(size))), chaintypes.NewInt(1<<30))
+	logs.GetLogger().Infof("Price per Block: %s\n", chaintypes.FIL(perEpoch))
+	info.EpochPrice = perEpoch
+
+	if duration == 0 {
+		return info, nil
+	}
+	info.TotalPrice = chaintypes.BigMul(perEpoch, chaintypes.NewInt(uint64(duration)))
+	logs.GetLogger().Infof("Total Price: %s\n", chaintypes.FIL(info.TotalPrice))
+
+	return info, nil
+}
+
+type AskInfo struct {
+	storagemarket.StorageAsk
+	EpochPrice big.Int
+	TotalPrice big.Int
 }
