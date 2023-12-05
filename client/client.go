@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	mbig "math/big"
 	"net/url"
 	"os"
 	"strings"
@@ -337,17 +338,14 @@ func (client *Client) WalletDelete(walletAddress string) error {
 }
 
 func (client *Client) StartDeal(dealConfig *model.DealConfig) (string, error) {
-	minerPrice, err := client.lotus.CheckDealConfig(dealConfig)
+	pieceSize, epochPrice, err := CheckDealConfig(client.lotus, dealConfig)
 	if err != nil {
-		logs.GetLogger().Error(err)
 		return "", err
 	}
+	return client.StartDealDirect(pieceSize, epochPrice, dealConfig)
+}
 
-	pieceSize, sectorSize := utils.CalculatePieceSize(dealConfig.FileSize, true)
-	cost := utils.CalculateRealCost(sectorSize, *minerPrice)
-
-	epochPrice := cost.Mul(decimal.NewFromFloat(constants.LOTUS_PRICE_MULTIPLE_1E18))
-
+func (client *Client) StartDealDirect(pieceSize int64, epochPrice mbig.Int, dealConfig *model.DealConfig) (string, error) {
 	if !dealConfig.SkipConfirmation {
 		logs.GetLogger().Info("Do you confirm to submit the deal?")
 		logs.GetLogger().Info("Press Y/y to continue, other key to quit")
@@ -376,7 +374,7 @@ func (client *Client) StartDeal(dealConfig *model.DealConfig) (string, error) {
 		PayloadCid:    dealConfig.PayloadCid,
 		StartEpoch:    int(dealConfig.StartEpoch),
 		Duration:      dealConfig.Duration,
-		StoragePrice:  int(epochPrice.BigInt().Int64()),
+		StoragePrice:  int(epochPrice.Int64()),
 		Verified:      dealConfig.VerifiedDeal,
 		FastRetrieval: dealConfig.FastRetrieval,
 		Wallet:        dealConfig.SenderWallet,
@@ -712,4 +710,39 @@ type AskInfo struct {
 	storagemarket.StorageAsk
 	EpochPrice big.Int
 	TotalPrice big.Int
+}
+
+func CheckDealConfig(lotusClient *lotus.LotusClient, dealConfig *model.DealConfig, lotusFirst ...bool) (pieceSize int64, epochPrice mbig.Int, err error) {
+	first, last := CheckDealConfigByBoost, CheckDealConfigByLotus
+	if len(lotusFirst) > 0 {
+		first, last = CheckDealConfigByLotus, CheckDealConfigByBoost
+	}
+	pieceSize, epochPrice, err = first(lotusClient, dealConfig)
+	if err == nil {
+		return
+	}
+	return last(lotusClient, dealConfig)
+}
+
+func CheckDealConfigByLotus(lotusClient *lotus.LotusClient, dealConfig *model.DealConfig) (pieceSize int64, epochPrice mbig.Int, err error) {
+	minerPrice, err := lotusClient.CheckDealConfig(dealConfig)
+	if err != nil {
+		logs.GetLogger().Error(err)
+		return
+	}
+	pieceSize, sectorSize := utils.CalculatePieceSize(dealConfig.FileSize, false)
+	cost := utils.CalculateRealCost(sectorSize, *minerPrice)
+	epochPrice = *cost.Mul(decimal.NewFromFloat(constants.LOTUS_PRICE_MULTIPLE_1E18)).BigInt()
+	return
+}
+
+func CheckDealConfigByBoost(lotusClient *lotus.LotusClient, dealConfig *model.DealConfig) (pieceSize int64, epochPrice mbig.Int, err error) {
+	pieceSize, sectorSize := utils.CalculatePieceSize(dealConfig.FileSize, false)
+	ask, err := GetClient(dealConfig.ClientRepo).WithClient(lotusClient).StorageAsk(dealConfig.MinerFid, int64(sectorSize), int64(dealConfig.Duration))
+	if err != nil {
+		logs.GetLogger().Error(err)
+		return
+	}
+	epochPrice = *ask.EpochPrice.Int
+	return
 }
