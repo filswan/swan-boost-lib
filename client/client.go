@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"github.com/fatih/color"
+	"github.com/filecoin-project/boost-gfm/storagemarket"
 	"github.com/filecoin-project/boost-gfm/storagemarket/network"
 	clinode "github.com/filecoin-project/boost/cli/node"
 	cliutil "github.com/filecoin-project/boost/cli/util"
@@ -630,11 +631,11 @@ type DealParam struct {
 	Wallet               string `json:"wallet"`                  // wallet address to be used to initiate the deal
 }
 
-func (client *Client) StorageAsk(provider string, size int64, duration int64) error {
+func (client *Client) StorageAsk(provider string) (*storagemarket.StorageAsk, error) {
 	ctx := context.Background()
 	n, err := clinode.Setup(client.ClientRepo)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	defer n.Host.Close()
 
@@ -642,32 +643,32 @@ func (client *Client) StorageAsk(provider string, size int64, duration int64) er
 	addr, err := ainfo.DialArgs("v1")
 	if err != nil {
 		logs.GetLogger().Error("parse fullNodeApi failed: %w", err)
-		return err
+		return nil, err
 	}
 
 	fullNode, closer, err := apiclient.NewFullNodeRPCV1(ctx, addr, ainfo.AuthHeader())
 	if err != nil {
-		return fmt.Errorf("cant setup fullnode connection: %w", err)
+		return nil, fmt.Errorf("cant setup fullnode connection: %w", err)
 	}
 	defer closer()
 	maddr, err := address.NewFromString(provider)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	addrInfo, err := cmd.GetAddrInfo(ctx, fullNode, maddr)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	logs.GetLogger().Debug("found storage provider", "id", addrInfo.ID, "multiaddrs", addrInfo.Addrs, "addr", maddr)
 
 	if err := n.Host.Connect(ctx, *addrInfo); err != nil {
-		return fmt.Errorf("failed to connect to peer %s: %w", addrInfo.ID, err)
+		return nil, fmt.Errorf("failed to connect to peer %s: %w", addrInfo.ID, err)
 	}
 
 	s, err := n.Host.NewStream(ctx, addrInfo.ID, AskProtocolID)
 	if err != nil {
-		return fmt.Errorf("failed to open stream to peer %s: %w", addrInfo.ID, err)
+		return nil, fmt.Errorf("failed to open stream to peer %s: %w", addrInfo.ID, err)
 	}
 	defer s.Close()
 
@@ -678,7 +679,7 @@ func (client *Client) StorageAsk(provider string, size int64, duration int64) er
 	}
 
 	if err := doRpc(ctx, s, &askRequest, &resp); err != nil {
-		return fmt.Errorf("send ask request rpc: %w", err)
+		return nil, fmt.Errorf("send ask request rpc: %w", err)
 	}
 
 	ask := resp.Ask.Ask
@@ -688,17 +689,5 @@ func (client *Client) StorageAsk(provider string, size int64, duration int64) er
 	logs.GetLogger().Infof("Verified Price per GiB: %s\n", chaintypes.FIL(ask.VerifiedPrice))
 	logs.GetLogger().Infof("Max Piece size: %s\n", chaintypes.SizeStr(chaintypes.NewInt(uint64(ask.MaxPieceSize))))
 	logs.GetLogger().Infof("Min Piece size: %s\n", chaintypes.SizeStr(chaintypes.NewInt(uint64(ask.MinPieceSize))))
-
-	if size == 0 {
-		return nil
-	}
-	perEpoch := chaintypes.BigDiv(chaintypes.BigMul(ask.Price, chaintypes.NewInt(uint64(size))), chaintypes.NewInt(1<<30))
-	logs.GetLogger().Infof("Price per Block: %s\n", chaintypes.FIL(perEpoch))
-
-	if duration == 0 {
-		return nil
-	}
-	logs.GetLogger().Infof("Total Price: %s\n", chaintypes.FIL(chaintypes.BigMul(perEpoch, chaintypes.NewInt(uint64(duration)))))
-
-	return nil
+	return ask, nil
 }
