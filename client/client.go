@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"github.com/fatih/color"
+	"github.com/filecoin-project/boost-gfm/storagemarket/network"
 	clinode "github.com/filecoin-project/boost/cli/node"
 	cliutil "github.com/filecoin-project/boost/cli/util"
 	"github.com/filecoin-project/boost/cmd"
@@ -37,7 +38,10 @@ import (
 	"github.com/shopspring/decimal"
 )
 
-const DealProtocolv120 = "/fil/storage/mk/1.2.0"
+const (
+	DealProtocolv120 = "/fil/storage/mk/1.2.0"
+	AskProtocolID    = "/fil/storage/ask/1.1.0"
+)
 
 type Client struct {
 	lotus       *lotus.LotusClient
@@ -624,4 +628,77 @@ type DealParam struct {
 	Verified             bool   `json:"verified"`                // whether the deal funds should come from verified client data-cap. default true
 	FastRetrieval        bool   `json:"fast_retrieval"`          // indicates that data should be available for fast retrieval. default true
 	Wallet               string `json:"wallet"`                  // wallet address to be used to initiate the deal
+}
+
+func (client *Client) StorageAsk(provider string, size int64, duration int64) error {
+	ctx := context.Background()
+	n, err := clinode.Setup(client.ClientRepo)
+	if err != nil {
+		return err
+	}
+	defer n.Host.Close()
+
+	ainfo := cliutil.ParseApiInfo(client.FullNodeApi)
+	addr, err := ainfo.DialArgs("v1")
+	if err != nil {
+		logs.GetLogger().Error("parse fullNodeApi failed: %w", err)
+		return err
+	}
+
+	fullNode, closer, err := apiclient.NewFullNodeRPCV1(ctx, addr, ainfo.AuthHeader())
+	if err != nil {
+		return fmt.Errorf("cant setup fullnode connection: %w", err)
+	}
+	defer closer()
+	maddr, err := address.NewFromString(provider)
+	if err != nil {
+		return err
+	}
+
+	addrInfo, err := cmd.GetAddrInfo(ctx, fullNode, maddr)
+	if err != nil {
+		return err
+	}
+	logs.GetLogger().Debug("found storage provider", "id", addrInfo.ID, "multiaddrs", addrInfo.Addrs, "addr", maddr)
+
+	if err := n.Host.Connect(ctx, *addrInfo); err != nil {
+		return fmt.Errorf("failed to connect to peer %s: %w", addrInfo.ID, err)
+	}
+
+	s, err := n.Host.NewStream(ctx, addrInfo.ID, AskProtocolID)
+	if err != nil {
+		return fmt.Errorf("failed to open stream to peer %s: %w", addrInfo.ID, err)
+	}
+	defer s.Close()
+
+	var resp network.AskResponse
+
+	askRequest := network.AskRequest{
+		Miner: maddr,
+	}
+
+	if err := doRpc(ctx, s, &askRequest, &resp); err != nil {
+		return fmt.Errorf("send ask request rpc: %w", err)
+	}
+
+	ask := resp.Ask.Ask
+
+	logs.GetLogger().Infof("Ask: %s\n", maddr)
+	logs.GetLogger().Infof("Price per GiB: %s\n", chaintypes.FIL(ask.Price))
+	logs.GetLogger().Infof("Verified Price per GiB: %s\n", chaintypes.FIL(ask.VerifiedPrice))
+	logs.GetLogger().Infof("Max Piece size: %s\n", chaintypes.SizeStr(chaintypes.NewInt(uint64(ask.MaxPieceSize))))
+	logs.GetLogger().Infof("Min Piece size: %s\n", chaintypes.SizeStr(chaintypes.NewInt(uint64(ask.MinPieceSize))))
+
+	if size == 0 {
+		return nil
+	}
+	perEpoch := chaintypes.BigDiv(chaintypes.BigMul(ask.Price, chaintypes.NewInt(uint64(size))), chaintypes.NewInt(1<<30))
+	logs.GetLogger().Infof("Price per Block: %s\n", chaintypes.FIL(perEpoch))
+
+	if duration == 0 {
+		return nil
+	}
+	logs.GetLogger().Infof("Total Price: %s\n", chaintypes.FIL(chaintypes.BigMul(perEpoch, chaintypes.NewInt(uint64(duration)))))
+
+	return nil
 }

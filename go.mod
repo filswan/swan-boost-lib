@@ -6,6 +6,7 @@ require (
 	github.com/docker/go-units v0.5.0
 	github.com/fatih/color v1.13.0
 	github.com/filecoin-project/boost v1.7.5-0.20231124125934-3233c510357f
+	github.com/filecoin-project/boost-gfm v1.26.7
 	github.com/filecoin-project/go-address v1.1.0
 	github.com/filecoin-project/go-cbor-util v0.0.1
 	github.com/filecoin-project/go-jsonrpc v0.3.1
@@ -50,7 +51,6 @@ require (
 	github.com/dustin/go-humanize v1.0.1 // indirect
 	github.com/elastic/go-elasticsearch/v7 v7.14.0 // indirect
 	github.com/elastic/gosigar v0.14.2 // indirect
-	github.com/filecoin-project/boost-gfm v1.26.7 // indirect
 	github.com/filecoin-project/boost/extern/boostd-data v0.0.0-20231101173716-1622d0ce2581 // indirect
 	github.com/filecoin-project/filecoin-ffi v1.25.0-dev.1 // indirect
 	github.com/filecoin-project/go-amt-ipld/v2 v2.1.0 // indirect
@@ -60,6 +60,7 @@ require (
 	github.com/filecoin-project/go-crypto v0.0.1 // indirect
 	github.com/filecoin-project/go-data-transfer v1.15.4-boost // indirect
 	github.com/filecoin-project/go-data-transfer/v2 v2.0.0-rc7 // indirect
+	github.com/filecoin-project/go-ds-versioning v0.1.2 // indirect
 	github.com/filecoin-project/go-fil-commcid v0.1.0 // indirect
 	github.com/filecoin-project/go-fil-markets v1.28.3 // indirect
 	github.com/filecoin-project/go-hamt-ipld v0.1.5 // indirect
