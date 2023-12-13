@@ -338,10 +338,13 @@ func (client *Client) WalletDelete(walletAddress string) error {
 }
 
 func (client *Client) StartDeal(dealConfig *model.DealConfig) (string, error) {
-	pieceSize, epochPrice, err := CheckDealConfig(client.lotus, dealConfig)
+	minerPrice, _, err := ValidateDealConfig(client.lotus, dealConfig, true)
 	if err != nil {
 		return "", err
 	}
+	pieceSize, sectorSize := utils.CalculatePieceSize(dealConfig.FileSize, true)
+	cost := utils.CalculateRealCost(sectorSize, *minerPrice)
+	epochPrice := *cost.Mul(decimal.NewFromFloat(constants.LOTUS_PRICE_MULTIPLE_1E18)).BigInt()
 	return client.StartDealDirect(pieceSize, epochPrice, dealConfig)
 }
 
@@ -745,4 +748,90 @@ func CheckDealConfigByBoost(lotusClient *lotus.LotusClient, dealConfig *model.De
 	}
 	epochPrice = *ask.EpochPrice.Int
 	return
+}
+
+func ValidateDealConfig(lotusClient *lotus.LotusClient, dealConfig *model.DealConfig, boostFirst ...bool) (minerPrice *decimal.Decimal, isBoost bool, err error) {
+	if dealConfig == nil {
+		err = fmt.Errorf("parameter dealConfig is nil")
+		logs.GetLogger().Error(err)
+		return
+	}
+
+	if dealConfig.SenderWallet == "" {
+		err = fmt.Errorf("wallet should be set")
+		logs.GetLogger().Error(err)
+		return
+	}
+
+	// query ask miner config
+	var first, last QueryAsk
+	if len(boostFirst) > 0 && boostFirst[0] {
+		first, last = GetClient(dealConfig.ClientRepo).WithClient(lotusClient).QueryAsk, lotusClient.LotusClientQueryAsk
+		isBoost = true
+	} else {
+		first, last = lotusClient.LotusClientQueryAsk, GetClient(dealConfig.ClientRepo).WithClient(lotusClient).QueryAsk
+	}
+	minerConfig, err := first(dealConfig.MinerFid)
+	if err != nil {
+		logs.GetLogger().Error(err)
+		isBoost = !isBoost // note: this
+		minerConfig, err = last(dealConfig.MinerFid)
+		if err != nil {
+			logs.GetLogger().Error(err)
+			return
+		}
+	}
+
+	// check deal with miner config
+	minerPrice, err = CheckDealWithMinerConfig(lotusClient, dealConfig, minerConfig)
+	return
+}
+
+type QueryAsk func(miner string) (*lotus.MinerConfig, error)
+
+func (client *Client) QueryAsk(miner string) (*lotus.MinerConfig, error) {
+	info, err := client.StorageAsk(miner, 0, 0)
+	if err != nil {
+		return nil, err
+	}
+	return &lotus.MinerConfig{
+		Price:         decimal.NewFromBigInt(info.Price.Int, 0),
+		VerifiedPrice: decimal.NewFromBigInt(info.VerifiedPrice.Int, 0),
+		MinPieceSize:  int64(info.MinPieceSize),
+		MaxPieceSize:  int64(info.MaxPieceSize),
+	}, nil
+}
+
+func CheckDealWithMinerConfig(lotusClient *lotus.LotusClient, dealConfig *model.DealConfig, minerConfig *lotus.MinerConfig) (*decimal.Decimal, error) {
+	if dealConfig.FileSize < minerConfig.MinPieceSize || dealConfig.FileSize > minerConfig.MaxPieceSize {
+		err := fmt.Errorf("payload cid:%s, file size:%d is outside of miner:%s's range:[%d,%d]", dealConfig.PayloadCid, dealConfig.FileSize, dealConfig.MinerFid, minerConfig.MinPieceSize, minerConfig.MaxPieceSize)
+		logs.GetLogger().Error(err)
+		return nil, err
+	}
+
+	e18 := decimal.NewFromFloat(constants.LOTUS_PRICE_MULTIPLE_1E18)
+	var minerPrice decimal.Decimal
+	if dealConfig.VerifiedDeal {
+		minerPrice = minerConfig.VerifiedPrice.Div(e18)
+	} else {
+		minerPrice = minerConfig.Price.Div(e18)
+	}
+	logs.GetLogger().Info("miner: ", dealConfig.MinerFid, ", price: ", minerPrice)
+
+	priceCmp := dealConfig.MaxPrice.Cmp(minerPrice)
+	if priceCmp < 0 {
+		err := fmt.Errorf("miner price:%s > deal max price:%s", minerPrice.String(), dealConfig.MaxPrice.String())
+		logs.GetLogger().Error(err)
+		return nil, err
+	}
+
+	if dealConfig.Duration == 0 {
+		dealConfig.Duration = constants.DURATION_DEFAULT
+	}
+	if err := lotusClient.CheckDuration(dealConfig.Duration, dealConfig.StartEpoch); err != nil {
+		logs.GetLogger().Error(err)
+		return nil, err
+	}
+
+	return &minerPrice, nil
 }
