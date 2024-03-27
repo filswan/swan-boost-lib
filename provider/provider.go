@@ -163,6 +163,10 @@ func (pc *Client) BoostDirectDeal(ctx context.Context, boostRepo string, fullNod
 		return nil, fmt.Errorf("getting claim details from chain: %w", err)
 	}
 
+	if alloc == nil {
+		return nil, fmt.Errorf("no allocation found with ID %d", allocationId)
+	}
+
 	if alloc.Expiration < startEpoch {
 		return nil, fmt.Errorf("allocation will expire on %d before start epoch %d", alloc.Expiration, startEpoch)
 	}
