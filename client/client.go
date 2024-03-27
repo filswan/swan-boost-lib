@@ -87,7 +87,7 @@ func (client *Client) WithClient(lotus *lotus.LotusClient) *Client {
 }
 
 func (client *Client) GetLotusFullNodeApi() (api.FullNode, jsonrpc.ClientCloser, error) {
-	var headers http.Header
+	var headers = make(http.Header)
 	if len(client.lotus.AccessToken) != 0 {
 		headers.Add("Authorization", "Bearer "+client.lotus.AccessToken)
 	}
