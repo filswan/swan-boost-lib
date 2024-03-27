@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"flag"
 	"fmt"
 	"github.com/filecoin-project/go-jsonrpc"
 	mbig "math/big"
@@ -20,13 +21,17 @@ import (
 	clinode "github.com/filecoin-project/boost/cli/node"
 	cliutil "github.com/filecoin-project/boost/cli/util"
 	"github.com/filecoin-project/boost/cmd"
+	"github.com/filecoin-project/boost/cmd/boost/util"
+	"github.com/filecoin-project/boost/cmd/lib"
 	"github.com/filecoin-project/boost/storagemarket/types"
 	"github.com/filecoin-project/go-address"
 	cborutil "github.com/filecoin-project/go-cbor-util"
 	"github.com/filecoin-project/go-state-types/abi"
 	"github.com/filecoin-project/go-state-types/big"
 	"github.com/filecoin-project/go-state-types/builtin/v9/market"
+	verifregst "github.com/filecoin-project/go-state-types/builtin/v9/verifreg"
 	"github.com/filecoin-project/lotus/api"
+	lapi "github.com/filecoin-project/lotus/api"
 	apiclient "github.com/filecoin-project/lotus/api/client"
 	lcli "github.com/filecoin-project/lotus/api/client"
 	chaintypes "github.com/filecoin-project/lotus/chain/types"
@@ -41,6 +46,7 @@ import (
 	inet "github.com/libp2p/go-libp2p/core/network"
 	"github.com/mitchellh/go-homedir"
 	"github.com/shopspring/decimal"
+	"github.com/urfave/cli/v2"
 )
 
 const (
@@ -347,6 +353,74 @@ func (client *Client) WalletDelete(walletAddress string) error {
 	}
 
 	return n.Wallet.WalletDelete(ctx, addr)
+}
+
+func (client *Client) AllocateDeal(dealConfig *model.DealConfig, wallet string) (id uint64, err error) {
+	pieceSize, _ := utils.CalculatePieceSize(dealConfig.FileSize, true)
+	ctx := context.Background()
+	n, err := clinode.Setup(client.ClientRepo)
+	if err != nil {
+		return
+	}
+	apiInfo := cliutil.ParseApiInfo(client.FullNodeApi)
+	gapi, closer, err := apiclient.NewGatewayRPCV1(ctx, apiInfo.Addr, apiInfo.AuthHeader())
+	defer closer()
+
+	walletAddr, err := address.NewFromString(wallet)
+	if err != nil {
+		return
+	}
+
+	msg, err := util.CreateAllocationMsg(ctx, gapi, []string{fmt.Sprintf("%s=%s", dealConfig.PayloadCid, pieceSize)}, []string{dealConfig.MinerFid}, walletAddr, verifregst.MinimumVerifiedAllocationTerm, verifregst.MaximumVerifiedAllocationTerm, abi.ChainEpoch(dealConfig.Duration))
+	if err != nil {
+		return
+	}
+
+	oldallocations, err := gapi.StateGetAllocations(ctx, walletAddr, chaintypes.EmptyTSK)
+	if err != nil {
+		return 0, fmt.Errorf("failed to get allocations: %w", err)
+	}
+	cctx := cli.NewContext(nil, new(flag.FlagSet), nil)
+	cctx.Set("assume-yes", "true")
+	mcid, sent, err := lib.SignAndPushToMpool(cctx, ctx, gapi, n, msg)
+	if err != nil {
+		return
+	}
+	if !sent {
+		return 0, errors.New("send failed")
+	}
+
+	logs.GetLogger().Infof("submitted data cap allocation message", "cid", mcid.String())
+	logs.GetLogger().Info("waiting for message to be included in a block")
+
+	res, err := gapi.StateWaitMsg(ctx, mcid, 1, lapi.LookbackNoLimit, true)
+	if err != nil {
+		return 0, fmt.Errorf("waiting for message to be included in a block: %w", err)
+	}
+
+	if !res.Receipt.ExitCode.IsSuccess() {
+		return 0, fmt.Errorf("failed to execute the message with error: %s", res.Receipt.ExitCode.Error())
+	}
+
+	newallocations, err := gapi.StateGetAllocations(ctx, walletAddr, chaintypes.EmptyTSK)
+	if err != nil {
+		return 0, fmt.Errorf("failed to get allocations: %w", err)
+	}
+
+	// Generate a diff to find new allocations
+	for i := range newallocations {
+		_, ok := oldallocations[i]
+		if ok {
+			delete(newallocations, i)
+		}
+	}
+
+	for aid, allocation := range newallocations {
+		if allocation.Data.String() == dealConfig.PieceCid {
+			return uint64(aid), nil
+		}
+	}
+	return 0, errors.New("not found allocation")
 }
 
 func (client *Client) StartDeal(dealConfig *model.DealConfig) (string, error) {
