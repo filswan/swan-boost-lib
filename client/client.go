@@ -8,7 +8,6 @@ import (
 	"errors"
 	"flag"
 	"fmt"
-	"github.com/filecoin-project/go-jsonrpc"
 	mbig "math/big"
 	"net/http"
 	"net/url"
@@ -26,6 +25,7 @@ import (
 	"github.com/filecoin-project/boost/storagemarket/types"
 	"github.com/filecoin-project/go-address"
 	cborutil "github.com/filecoin-project/go-cbor-util"
+	"github.com/filecoin-project/go-jsonrpc"
 	"github.com/filecoin-project/go-state-types/abi"
 	"github.com/filecoin-project/go-state-types/big"
 	"github.com/filecoin-project/go-state-types/builtin/v9/market"
@@ -371,7 +371,7 @@ func (client *Client) AllocateDeal(dealConfig *model.DealConfig, wallet string) 
 		return
 	}
 
-	msg, err := util.CreateAllocationMsg(ctx, gapi, []string{fmt.Sprintf("%s=%s", dealConfig.PayloadCid, pieceSize)}, []string{dealConfig.MinerFid}, walletAddr, verifregst.MinimumVerifiedAllocationTerm, verifregst.MaximumVerifiedAllocationTerm, abi.ChainEpoch(dealConfig.Duration))
+	msg, err := util.CreateAllocationMsg(ctx, gapi, []string{fmt.Sprintf("%s=%d", dealConfig.PayloadCid, pieceSize)}, []string{dealConfig.MinerFid}, walletAddr, verifregst.MinimumVerifiedAllocationTerm, verifregst.MaximumVerifiedAllocationTerm, abi.ChainEpoch(dealConfig.Duration))
 	if err != nil {
 		return
 	}
