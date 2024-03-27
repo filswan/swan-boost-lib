@@ -363,7 +363,11 @@ func (client *Client) AllocateDeal(dealConfig *model.DealConfig) (id uint64, err
 		return
 	}
 	apiInfo := cliutil.ParseApiInfo(client.FullNodeApi)
-	gapi, closer, err := apiclient.NewGatewayRPCV1(ctx, apiInfo.Addr, apiInfo.AuthHeader())
+	addr, err := apiInfo.DialArgs("v1")
+	if err != nil {
+		return 0, fmt.Errorf("parse fullNodeApi failed: %w", err)
+	}
+	gapi, closer, err := apiclient.NewGatewayRPCV1(ctx, addr, apiInfo.AuthHeader())
 	if err != nil {
 		return 0, fmt.Errorf("can't setup gateway connection: %w", err)
 	}
@@ -374,7 +378,7 @@ func (client *Client) AllocateDeal(dealConfig *model.DealConfig) (id uint64, err
 		return
 	}
 
-	msg, err := util.CreateAllocationMsg(ctx, gapi, []string{fmt.Sprintf("%s=%d", dealConfig.PayloadCid, pieceSize)}, []string{dealConfig.MinerFid}, walletAddr, verifregst.MinimumVerifiedAllocationTerm, verifregst.MaximumVerifiedAllocationTerm, abi.ChainEpoch(dealConfig.Duration))
+	msg, err := util.CreateAllocationMsg(ctx, gapi, []string{fmt.Sprintf("%s=%d", dealConfig.PayloadCid, pieceSize)}, []string{dealConfig.MinerFid}, walletAddr, verifregst.MinimumVerifiedAllocationTerm, verifregst.MaximumVerifiedAllocationTerm, verifregst.MaximumVerifiedAllocationExpiration)
 	if err != nil {
 		return
 	}
