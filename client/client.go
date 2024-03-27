@@ -7,7 +7,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/filecoin-project/go-jsonrpc"
 	mbig "math/big"
+	"net/http"
 	"net/url"
 	"os"
 	"strings"
@@ -26,6 +28,7 @@ import (
 	"github.com/filecoin-project/go-state-types/builtin/v9/market"
 	"github.com/filecoin-project/lotus/api"
 	apiclient "github.com/filecoin-project/lotus/api/client"
+	lcli "github.com/filecoin-project/lotus/api/client"
 	chaintypes "github.com/filecoin-project/lotus/chain/types"
 	"github.com/filecoin-project/lotus/lib/tablewriter"
 	"github.com/filswan/go-swan-lib/client/lotus"
@@ -75,6 +78,15 @@ func (client *Client) WithClient(lotus *lotus.LotusClient) *Client {
 	}
 	client.FullNodeApi = fmt.Sprintf("%s:/ip4/%s/tcp/%s/http", lotus.AccessToken, u.Hostname(), u.Port())
 	return client
+}
+
+func (client *Client) GetLotusFullNodeApi() (api.FullNode, jsonrpc.ClientCloser, error) {
+	var headers http.Header
+	if len(client.lotus.AccessToken) != 0 {
+		headers.Add("Authorization", "Bearer "+client.lotus.AccessToken)
+	}
+
+	return lcli.NewFullNodeRPCV1(context.TODO(), client.lotus.ApiUrl, headers)
 }
 
 func (client *Client) WithRepo(clientRepo string) *Client {

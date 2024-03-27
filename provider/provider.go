@@ -3,7 +3,17 @@ package provider
 import (
 	"context"
 	"fmt"
+	"github.com/filecoin-project/boost/storagemarket/types/legacytypes"
+	"github.com/filecoin-project/go-address"
+	"github.com/filecoin-project/go-state-types/builtin"
+	"github.com/filecoin-project/go-state-types/builtin/v9/verifreg"
+	"github.com/filecoin-project/lotus/api"
+	"github.com/filswan/swan-boost-lib/client"
+	myask "github.com/filswan/swan-boost-lib/storedask"
+	"github.com/ipfs/go-cid"
+	"github.com/libp2p/go-libp2p/core/peer"
 	"net/http"
+	"strconv"
 	"time"
 
 	"github.com/docker/go-units"
@@ -15,7 +25,6 @@ import (
 	"github.com/filecoin-project/lotus/build"
 	chain_type "github.com/filecoin-project/lotus/chain/types"
 	"github.com/google/uuid"
-	"github.com/ipfs/go-cid"
 	"github.com/pkg/errors"
 	"golang.org/x/xerrors"
 )
@@ -59,15 +68,7 @@ func (pc *Client) OfflineDealWithData(ctx context.Context, dealUuid, filePath st
 	}, nil
 }
 
-func (pc *Client) OfflineDealWithDataByMarket(ctx context.Context, proposalCid, filePath string) error {
-	propCid, err := cid.Decode(proposalCid)
-	if err != nil {
-		return fmt.Errorf("could not parse '%s' as deal proposal cid", proposalCid)
-	}
-	return pc.stub.MarketImportDealData(ctx, propCid, filePath)
-}
-
-func (pc *Client) MarketSetAsk(ctx context.Context, price, verifiedPrice, minPieceSize, maxPieceSize string) error {
+func (pc *Client) MarketSetAsk(ctx context.Context, boostRepo string, fullNode api.FullNode, minerId string, price, verifiedPrice, minPieceSize, maxPieceSize string) error {
 	pri, err := chain_type.ParseFIL(price)
 	if err != nil {
 		return err
@@ -98,11 +99,89 @@ func (pc *Client) MarketSetAsk(ctx context.Context, price, verifiedPrice, minPie
 
 	qty := dur.Seconds() / float64(build.BlockDelaySecs)
 
-	return pc.stub.MarketSetAsk(ctx, chain_type.BigInt(pri), chain_type.BigInt(vpri), abi.ChainEpoch(qty), abi.PaddedPieceSize(min), abi.PaddedPieceSize(max))
+	miner, err := address.NewFromString(minerId)
+	if err != nil {
+		return fmt.Errorf("converting miner ID from config: %w", err)
+	}
+
+	var opts []legacytypes.StorageAskOption
+	opts = append(opts, legacytypes.MinPieceSize(abi.PaddedPieceSize(min)))
+	opts = append(opts, legacytypes.MaxPieceSize(abi.PaddedPieceSize(max)))
+
+	storedAsk, err := myask.NewStoredAsk(boostRepo, fullNode)
+	return storedAsk.SetAsk(ctx, chain_type.BigInt(pri), chain_type.BigInt(vpri), abi.ChainEpoch(qty), miner, opts...)
 }
 
-func (pc *Client) GetDealsConsiderOfflineStorageDeals(ctx context.Context) (bool, error) {
-	return pc.stub.DealsConsiderOfflineStorageDeals(ctx)
+func (pc *Client) CheckBoostStatus(ctx context.Context) (peer.ID, error) {
+	return pc.stub.ID(ctx)
+}
+
+func (pc *Client) BoostDirectDeal(ctx context.Context, boostRepo string, fullNodeUrl string, walletAddress string, allocationId string, filepath string, piececidStr string, isDelete bool) (*DealRejectionInfo, error) {
+	myClient, err := client.GetClient(boostRepo).WithUrl(fullNodeUrl)
+	if err != nil {
+		return nil, err
+	}
+
+	fullNodeApi, lcloser, err := myClient.GetLotusFullNodeApi()
+	if err != nil {
+		return nil, err
+	}
+	defer lcloser()
+
+	head, err := fullNodeApi.ChainHead(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("getting chain head: %w", err)
+	}
+
+	clientAddr, err := address.NewFromString(walletAddress)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse clientaddr param: %w", err)
+	}
+
+	piececid, err := cid.Decode(piececidStr)
+	if err != nil {
+		return nil, fmt.Errorf("could not parse piececid: %w", err)
+	}
+
+	allocationIdUnit, err := strconv.ParseUint(allocationId, 10, 64)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse allocationId param: %w", err)
+	}
+	startEpoch := head.Height() + (builtin.EpochsInDay * 2)
+
+	alloc, err := fullNodeApi.StateGetAllocation(ctx, clientAddr, verifreg.AllocationId(allocationIdUnit), head.Key())
+	if err != nil {
+		return nil, fmt.Errorf("getting claim details from chain: %w", err)
+	}
+
+	if alloc.Expiration < startEpoch {
+		return nil, fmt.Errorf("allocation will expire on %d before start epoch %d", alloc.Expiration, startEpoch)
+	}
+
+	// Since StartEpoch is more than Head+StartEpochSealingBuffer, we can set end epoch as start+TermMin
+	endEpoch := startEpoch + alloc.TermMin
+
+	ddParams := types.DirectDealParams{
+		DealUUID:           uuid.New(),
+		AllocationID:       verifreg.AllocationId(allocationIdUnit),
+		PieceCid:           piececid,
+		ClientAddr:         clientAddr,
+		StartEpoch:         startEpoch,
+		EndEpoch:           endEpoch,
+		FilePath:           filepath,
+		DeleteAfterImport:  isDelete,
+		RemoveUnsealedCopy: false,
+		SkipIPNIAnnounce:   false,
+	}
+
+	directDeal, err := pc.stub.BoostDirectDeal(ctx, ddParams)
+	if err != nil {
+		return nil, err
+	}
+	return &DealRejectionInfo{
+		Accepted: directDeal.Accepted,
+		Reason:   directDeal.Reason,
+	}, nil
 }
 
 func statusMessage(resp *types.DealStatusResponse) string {
