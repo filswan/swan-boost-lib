@@ -7,7 +7,6 @@ import (
 	"github.com/filecoin-project/go-address"
 	"github.com/filecoin-project/go-state-types/builtin"
 	"github.com/filecoin-project/go-state-types/builtin/v9/verifreg"
-	"github.com/filecoin-project/lotus/api"
 	"github.com/filswan/swan-boost-lib/client"
 	myask "github.com/filswan/swan-boost-lib/storedask"
 	"github.com/ipfs/go-cid"
@@ -68,7 +67,7 @@ func (pc *Client) OfflineDealWithData(ctx context.Context, dealUuid, filePath st
 	}, nil
 }
 
-func (pc *Client) MarketSetAsk(ctx context.Context, boostRepo string, fullNode api.FullNode, minerId string, price, verifiedPrice, minPieceSize, maxPieceSize string) error {
+func (pc *Client) MarketSetAsk(ctx context.Context, boostRepo string, fullNodeUrl string, minerId string, price, verifiedPrice, minPieceSize, maxPieceSize string) error {
 	pri, err := chain_type.ParseFIL(price)
 	if err != nil {
 		return err
@@ -108,7 +107,18 @@ func (pc *Client) MarketSetAsk(ctx context.Context, boostRepo string, fullNode a
 	opts = append(opts, legacytypes.MinPieceSize(abi.PaddedPieceSize(min)))
 	opts = append(opts, legacytypes.MaxPieceSize(abi.PaddedPieceSize(max)))
 
-	storedAsk, err := myask.NewStoredAsk(boostRepo, fullNode)
+	myClient, err := client.GetClient(boostRepo).WithUrl(fullNodeUrl)
+	if err != nil {
+		return err
+	}
+
+	fullNodeApi, lcloser, err := myClient.GetLotusFullNodeApi()
+	if err != nil {
+		return err
+	}
+	defer lcloser()
+
+	storedAsk, err := myask.NewStoredAsk(boostRepo, fullNodeApi)
 	return storedAsk.SetAsk(ctx, chain_type.BigInt(pri), chain_type.BigInt(vpri), abi.ChainEpoch(qty), miner, opts...)
 }
 
