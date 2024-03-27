@@ -355,7 +355,7 @@ func (client *Client) WalletDelete(walletAddress string) error {
 	return n.Wallet.WalletDelete(ctx, addr)
 }
 
-func (client *Client) AllocateDeal(dealConfig *model.DealConfig, wallet string) (id uint64, err error) {
+func (client *Client) AllocateDeal(dealConfig *model.DealConfig) (id uint64, err error) {
 	pieceSize, _ := utils.CalculatePieceSize(dealConfig.FileSize, true)
 	ctx := context.Background()
 	n, err := clinode.Setup(client.ClientRepo)
@@ -364,9 +364,12 @@ func (client *Client) AllocateDeal(dealConfig *model.DealConfig, wallet string) 
 	}
 	apiInfo := cliutil.ParseApiInfo(client.FullNodeApi)
 	gapi, closer, err := apiclient.NewGatewayRPCV1(ctx, apiInfo.Addr, apiInfo.AuthHeader())
+	if err != nil {
+		return 0, fmt.Errorf("can't setup gateway connection: %w", err)
+	}
 	defer closer()
 
-	walletAddr, err := address.NewFromString(wallet)
+	walletAddr, err := address.NewFromString(dealConfig.SenderWallet)
 	if err != nil {
 		return
 	}
