@@ -28,7 +28,9 @@ import (
 	"github.com/filecoin-project/go-jsonrpc"
 	"github.com/filecoin-project/go-state-types/abi"
 	"github.com/filecoin-project/go-state-types/big"
+	verifreg13types "github.com/filecoin-project/go-state-types/builtin/v13/verifreg"
 	"github.com/filecoin-project/go-state-types/builtin/v9/market"
+	"github.com/filecoin-project/go-state-types/builtin/v9/verifreg"
 	verifregst "github.com/filecoin-project/go-state-types/builtin/v9/verifreg"
 	"github.com/filecoin-project/lotus/api"
 	lapi "github.com/filecoin-project/lotus/api"
@@ -402,7 +404,7 @@ func (client *Client) AllocateDeal(dealConfig *model.DealConfig) (id uint64, err
 		return 0, errors.New("send failed")
 	}
 
-	logs.GetLogger().Infof("submitted data cap allocation message", "cid", mcid.String())
+	logs.GetLogger().Infof("submitted data cap allocation message for piece %s , msg cid: %s", dealConfig.PieceCid, mcid.String())
 	logs.GetLogger().Info("waiting for message to be included in a block")
 
 	res, err := gapi.StateWaitMsg(ctx, mcid, 1, lapi.LookbackNoLimit, true)
@@ -427,12 +429,85 @@ func (client *Client) AllocateDeal(dealConfig *model.DealConfig) (id uint64, err
 		}
 	}
 
+	printAllocation(newallocations, false)
+
 	for aid, allocation := range newallocations {
 		if allocation.Data.String() == dealConfig.PieceCid {
+			logs.GetLogger().Infof("data cap allocate success for piece %s, allocation id: %d", dealConfig.PieceCid, aid)
 			return uint64(aid), nil
 		}
 	}
 	return 0, errors.New("not found allocation")
+}
+
+func printAllocation(allocations map[verifreg.AllocationId]verifreg.Allocation, json bool) error {
+	// Map Keys. Corresponds to the standard tablewriter output
+	allocationID := "AllocationID"
+	client := "Client"
+	provider := "Miner"
+	pieceCid := "PieceCid"
+	pieceSize := "PieceSize"
+	tMin := "TermMin"
+	tMax := "TermMax"
+	expr := "Expiration"
+
+	var allocs []map[string]interface{}
+
+	for key, val := range allocations {
+		alloc := map[string]interface{}{
+			allocationID: key,
+			client:       val.Client,
+			provider:     val.Provider,
+			pieceCid:     val.Data,
+			pieceSize:    val.Size,
+			tMin:         val.TermMin,
+			tMax:         val.TermMax,
+			expr:         val.Expiration,
+		}
+		allocs = append(allocs, alloc)
+	}
+
+	if json {
+		type jalloc struct {
+			Client     abi.ActorID         `json:"client"`
+			Provider   abi.ActorID         `json:"provider"`
+			Data       cid.Cid             `json:"data"`
+			Size       abi.PaddedPieceSize `json:"size"`
+			TermMin    abi.ChainEpoch      `json:"term_min"`
+			TermMax    abi.ChainEpoch      `json:"term_max"`
+			Expiration abi.ChainEpoch      `json:"expiration"`
+		}
+		allocMap := make(map[verifreg13types.AllocationId]jalloc, len(allocations))
+		for id, allocation := range allocations {
+			allocMap[verifreg13types.AllocationId(id)] = jalloc{
+				Provider:   allocation.Provider,
+				Client:     allocation.Client,
+				Data:       allocation.Data,
+				Size:       allocation.Size,
+				TermMin:    allocation.TermMin,
+				TermMax:    allocation.TermMax,
+				Expiration: allocation.Expiration,
+			}
+		}
+		return cmd.PrintJson(map[string]any{"allocations": allocations})
+	} else {
+		// Init the tablewriter's columns
+		tw := tablewriter.New(
+			tablewriter.Col(allocationID),
+			tablewriter.Col(client),
+			tablewriter.Col(provider),
+			tablewriter.Col(pieceCid),
+			tablewriter.Col(pieceSize),
+			tablewriter.Col(tMin),
+			tablewriter.Col(tMax),
+			tablewriter.NewLineCol(expr))
+		// populate it with content
+		for _, alloc := range allocs {
+			tw.Write(alloc)
+		}
+		// return the corresponding string
+		return tw.Flush(os.Stdout)
+	}
 }
 
 func (client *Client) StartDeal(dealConfig *model.DealConfig) (string, error) {
