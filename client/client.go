@@ -378,7 +378,12 @@ func (client *Client) AllocateDeal(dealConfig *model.DealConfig) (id uint64, err
 		return
 	}
 
-	msg, err := util.CreateAllocationMsg(ctx, gapi, []string{fmt.Sprintf("%s=%d", dealConfig.PayloadCid, pieceSize)}, []string{dealConfig.MinerFid}, walletAddr, verifregst.MinimumVerifiedAllocationTerm, verifregst.MaximumVerifiedAllocationTerm, verifregst.MaximumVerifiedAllocationExpiration)
+	head, err := gapi.ChainHead(ctx)
+	if err != nil {
+		return
+	}
+	exp := abi.ChainEpoch(dealConfig.StartEpoch) - head.Height()
+	msg, err := util.CreateAllocationMsg(ctx, gapi, []string{fmt.Sprintf("%s=%d", dealConfig.PieceCid, pieceSize)}, []string{dealConfig.MinerFid}, walletAddr, abi.ChainEpoch(dealConfig.Duration), verifregst.MaximumVerifiedAllocationTerm, exp)
 	if err != nil {
 		return
 	}
