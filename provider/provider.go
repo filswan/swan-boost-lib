@@ -10,7 +10,6 @@ import (
 	"github.com/filswan/swan-boost-lib/client"
 	myask "github.com/filswan/swan-boost-lib/storedask"
 	"github.com/ipfs/go-cid"
-	"github.com/libp2p/go-libp2p/core/peer"
 	"net/http"
 	"strconv"
 	"time"
@@ -122,8 +121,12 @@ func (pc *Client) MarketSetAsk(ctx context.Context, boostRepo string, fullNodeUr
 	return storedAsk.SetAsk(ctx, chain_type.BigInt(pri), chain_type.BigInt(vpri), abi.ChainEpoch(qty), miner, opts...)
 }
 
-func (pc *Client) CheckBoostStatus(ctx context.Context) (peer.ID, error) {
-	return pc.stub.ID(ctx)
+func (pc *Client) CheckBoostStatus(ctx context.Context) error {
+	_, err := pc.stub.Discover(ctx)
+	if err != nil {
+		return err
+	}
+	return nil
 }
 
 func (pc *Client) BoostDirectDeal(ctx context.Context, boostRepo string, fullNodeUrl string, walletAddress string, allocationId string, filepath string, piececidStr string, isDelete bool) (*DealRejectionInfo, error) {
