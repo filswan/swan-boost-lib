@@ -15,14 +15,14 @@ import (
 	"strings"
 
 	"github.com/fatih/color"
-	"github.com/filecoin-project/boost-gfm/storagemarket"
-	"github.com/filecoin-project/boost-gfm/storagemarket/network"
 	clinode "github.com/filecoin-project/boost/cli/node"
 	cliutil "github.com/filecoin-project/boost/cli/util"
 	"github.com/filecoin-project/boost/cmd"
 	"github.com/filecoin-project/boost/cmd/boost/util"
 	"github.com/filecoin-project/boost/cmd/lib"
 	"github.com/filecoin-project/boost/storagemarket/types"
+	"github.com/filecoin-project/boost/storagemarket/types/legacytypes"
+	"github.com/filecoin-project/boost/storagemarket/types/legacytypes/network"
 	"github.com/filecoin-project/go-address"
 	cborutil "github.com/filecoin-project/go-cbor-util"
 	"github.com/filecoin-project/go-jsonrpc"
@@ -31,11 +31,10 @@ import (
 	verifreg13types "github.com/filecoin-project/go-state-types/builtin/v13/verifreg"
 	"github.com/filecoin-project/go-state-types/builtin/v9/market"
 	"github.com/filecoin-project/go-state-types/builtin/v9/verifreg"
-	verifregst "github.com/filecoin-project/go-state-types/builtin/v9/verifreg"
 	"github.com/filecoin-project/lotus/api"
-	lapi "github.com/filecoin-project/lotus/api"
 	apiclient "github.com/filecoin-project/lotus/api/client"
 	lcli "github.com/filecoin-project/lotus/api/client"
+	"github.com/filecoin-project/lotus/build"
 	chaintypes "github.com/filecoin-project/lotus/chain/types"
 	"github.com/filecoin-project/lotus/lib/tablewriter"
 	"github.com/filswan/go-swan-lib/client/lotus"
@@ -49,6 +48,7 @@ import (
 	"github.com/mitchellh/go-homedir"
 	"github.com/shopspring/decimal"
 	"github.com/urfave/cli/v2"
+	"golang.org/x/sync/errgroup"
 )
 
 const (
@@ -357,7 +357,7 @@ func (client *Client) WalletDelete(walletAddress string) error {
 	return n.Wallet.WalletDelete(ctx, addr)
 }
 
-func (client *Client) AllocateDeal(dealConfig *model.DealConfig) (id uint64, err error) {
+func (client *Client) AllocateDeal(dealConfig *model.DealConfig, assumeYes ...bool) (id uint64, err error) {
 	pieceSize, _ := utils.CalculatePieceSize(dealConfig.FileSize, true)
 	ctx := context.Background()
 	n, err := clinode.Setup(client.ClientRepo)
@@ -379,13 +379,42 @@ func (client *Client) AllocateDeal(dealConfig *model.DealConfig) (id uint64, err
 	if err != nil {
 		return
 	}
+	logs.GetLogger().Debug("selected wallet", "wallet", walletAddr)
 
 	head, err := gapi.ChainHead(ctx)
 	if err != nil {
 		return
 	}
 	exp := abi.ChainEpoch(dealConfig.StartEpoch) - head.Height()
-	msg, err := util.CreateAllocationMsg(ctx, gapi, []string{fmt.Sprintf("%s=%d", dealConfig.PieceCid, pieceSize)}, []string{dealConfig.MinerFid}, walletAddr, abi.ChainEpoch(dealConfig.Duration), verifregst.MaximumVerifiedAllocationTerm, exp)
+
+	pieceCid, err := cid.Parse(dealConfig.PieceCid)
+	if err != nil {
+		return
+	}
+
+	maddr, err := address.NewFromString(dealConfig.MinerFid)
+	if err != nil {
+		return 0, fmt.Errorf("failed to parse miner address %w", err)
+	}
+
+	mid, err := address.IDFromAddress(maddr)
+	if err != nil {
+		return 0, fmt.Errorf("failed to convert miner address %w", err)
+	}
+
+	infos := []util.PieceInfos{
+		{
+			Cid:       pieceCid,
+			Size:      pieceSize,
+			Miner:     abi.ActorID(mid),
+			MinerAddr: maddr,
+			Tmin:      abi.ChainEpoch(dealConfig.Duration),
+			Tmax:      verifreg13types.MaximumVerifiedAllocationTerm,
+			Exp:       abi.ChainEpoch(exp),
+		},
+	}
+
+	msgs, err := util.CreateAllocationMsg(ctx, gapi, infos, walletAddr, len(infos))
 	if err != nil {
 		return
 	}
@@ -394,26 +423,58 @@ func (client *Client) AllocateDeal(dealConfig *model.DealConfig) (id uint64, err
 	if err != nil {
 		return 0, fmt.Errorf("failed to get allocations: %w", err)
 	}
-	cctx := cli.NewContext(nil, new(flag.FlagSet), nil)
-	cctx.Set("assume-yes", "true")
-	mcid, sent, err := lib.SignAndPushToMpool(cctx, ctx, gapi, n, msg)
-	if err != nil {
-		return
+
+	yes := false
+	if len(assumeYes) > 0 {
+		yes = assumeYes[0]
 	}
-	if !sent {
-		return 0, errors.New("send failed")
+	flagSet := new(flag.FlagSet)
+	flagSet.BoolVar(new(bool), "assume-yes", yes, "")
+	cctx := cli.NewContext(nil, flagSet, nil)
+
+	var mcids []cid.Cid
+
+	for _, msg := range msgs {
+		mcid, sent, err := lib.SignAndPushToMpool(cctx, ctx, gapi, n, msg)
+		if err != nil {
+			return 0, err
+		}
+		if !sent {
+			fmt.Printf("message %s with method %s not sent\n", msg.Cid(), msg.Method.String())
+			continue
+		}
+		mcids = append(mcids, mcid)
 	}
 
-	logs.GetLogger().Infof("submitted data cap allocation message for piece %s , msg cid: %s", dealConfig.PieceCid, mcid.String())
+	var mcidStr []string
+	for _, c := range mcids {
+		mcidStr = append(mcidStr, c.String())
+	}
+
+	logs.GetLogger().Info("submitted data cap allocation message[s]", mcidStr)
 	logs.GetLogger().Info("waiting for message to be included in a block")
 
-	res, err := gapi.StateWaitMsg(ctx, mcid, 1, lapi.LookbackNoLimit, true)
-	if err != nil {
-		return 0, fmt.Errorf("waiting for message to be included in a block: %w", err)
-	}
+	// wait for msgs to get mined into a block
+	eg := errgroup.Group{}
+	eg.SetLimit(10)
+	for _, msg := range mcids {
+		m := msg
+		eg.Go(func() error {
+			wait, err := gapi.StateWaitMsg(ctx, m, build.MessageConfidence, 2000, true)
+			if err != nil {
+				return fmt.Errorf("timeout waiting for message to land on chain %s", wait.Message)
 
-	if !res.Receipt.ExitCode.IsSuccess() {
-		return 0, fmt.Errorf("failed to execute the message with error: %s", res.Receipt.ExitCode.Error())
+			}
+
+			if wait.Receipt.ExitCode.IsError() {
+				return fmt.Errorf("failed to execute message %s: %w", wait.Message, wait.Receipt.ExitCode)
+			}
+			return nil
+		})
+	}
+	err = eg.Wait()
+	if err != nil {
+		return 0, err
 	}
 
 	newallocations, err := gapi.StateGetAllocations(ctx, walletAddr, chaintypes.EmptyTSK)
@@ -883,7 +944,7 @@ func (client *Client) StorageAsk(provider string, size int64, duration int64) (*
 }
 
 type AskInfo struct {
-	storagemarket.StorageAsk
+	legacytypes.StorageAsk
 	EpochPrice big.Int
 	TotalPrice big.Int
 }
