@@ -65,7 +65,7 @@ require (
 	github.com/elastic/go-sysinfo v1.11.0 // indirect
 	github.com/elastic/go-windows v1.0.1 // indirect
 	github.com/elastic/gosigar v0.14.2 // indirect
-	github.com/filecoin-project/boost/extern/boostd-data v0.0.0-20231124125934-3233c510357f // indirect
+	github.com/filecoin-project/boost/extern/boostd-data v0.0.0-20240626173351-5dcdc1cdd1ef // indirect
 	github.com/filecoin-project/dagstore v0.7.0 // indirect
 	github.com/filecoin-project/filecoin-ffi v1.28.0-rc2 // indirect
 	github.com/filecoin-project/go-amt-ipld/v2 v2.1.0 // indirect
