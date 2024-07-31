@@ -357,7 +357,7 @@ func (client *Client) WalletDelete(walletAddress string) error {
 	return n.Wallet.WalletDelete(ctx, addr)
 }
 
-func (client *Client) AllocateDeal(dealConfig *model.DealConfig, assumeYes ...bool) (id uint64, err error) {
+func (client *Client) AllocateDeal(dealConfig *model.DealConfig) (id uint64, err error) {
 	pieceSize, _ := utils.CalculatePieceSize(dealConfig.FileSize, true)
 	ctx := context.Background()
 	n, err := clinode.Setup(client.ClientRepo)
@@ -424,12 +424,8 @@ func (client *Client) AllocateDeal(dealConfig *model.DealConfig, assumeYes ...bo
 		return 0, fmt.Errorf("failed to get allocations: %w", err)
 	}
 
-	yes := false
-	if len(assumeYes) > 0 {
-		yes = assumeYes[0]
-	}
 	flagSet := new(flag.FlagSet)
-	flagSet.BoolVar(new(bool), "assume-yes", yes, "")
+	flagSet.BoolVar(new(bool), "assume-yes", dealConfig.SkipConfirmation, "")
 	cctx := cli.NewContext(nil, flagSet, nil)
 
 	var mcids []cid.Cid
