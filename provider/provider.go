@@ -3,8 +3,10 @@ package provider
 import (
 	"context"
 	"fmt"
+	"github.com/docker/go-units"
 	"github.com/filecoin-project/boost/storagemarket/types/legacytypes"
 	"github.com/filecoin-project/go-address"
+	"github.com/filecoin-project/go-jsonrpc"
 	"github.com/filecoin-project/go-state-types/builtin"
 	"github.com/filecoin-project/go-state-types/builtin/v9/verifreg"
 	"github.com/filswan/swan-boost-lib/client"
@@ -14,11 +16,9 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/docker/go-units"
 	boostapi "github.com/filecoin-project/boost/api"
 	"github.com/filecoin-project/boost/storagemarket/types"
 	"github.com/filecoin-project/boost/storagemarket/types/dealcheckpoints"
-	"github.com/filecoin-project/go-jsonrpc"
 	"github.com/filecoin-project/go-state-types/abi"
 	"github.com/filecoin-project/lotus/build"
 	chain_type "github.com/filecoin-project/lotus/chain/types"
@@ -119,14 +119,6 @@ func (pc *Client) MarketSetAsk(ctx context.Context, boostRepo string, fullNodeUr
 
 	storedAsk, err := myask.NewStoredAsk(boostRepo, fullNodeApi)
 	return storedAsk.SetAsk(ctx, chain_type.BigInt(pri), chain_type.BigInt(vpri), abi.ChainEpoch(qty), miner, opts...)
-}
-
-func (pc *Client) CheckBoostStatus(ctx context.Context) error {
-	_, err := pc.stub.Discover(ctx)
-	if err != nil {
-		return err
-	}
-	return nil
 }
 
 func (pc *Client) BoostDirectDeal(ctx context.Context, boostRepo string, fullNodeUrl string, walletAddress string, allocationId string, filepath string, piececidStr string, isDelete bool) (*DealRejectionInfo, error) {
