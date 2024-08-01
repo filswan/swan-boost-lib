@@ -34,7 +34,6 @@ import (
 	"github.com/filecoin-project/lotus/api"
 	apiclient "github.com/filecoin-project/lotus/api/client"
 	lcli "github.com/filecoin-project/lotus/api/client"
-	"github.com/filecoin-project/lotus/build"
 	chaintypes "github.com/filecoin-project/lotus/chain/types"
 	"github.com/filecoin-project/lotus/lib/tablewriter"
 	"github.com/filswan/go-swan-lib/client/lotus"
@@ -456,7 +455,7 @@ func (client *Client) AllocateDeal(dealConfig *model.DealConfig) (id uint64, err
 	for _, msg := range mcids {
 		m := msg
 		eg.Go(func() error {
-			wait, err := gapi.StateWaitMsg(ctx, m, build.MessageConfidence, 2000, true)
+			wait, err := gapi.StateWaitMsg(ctx, m, 1, 2000, true)
 			if err != nil {
 				return fmt.Errorf("timeout waiting for message to land on chain %s", wait.Message)
 
