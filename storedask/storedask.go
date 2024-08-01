@@ -144,7 +144,7 @@ func (s *storedAsk) SetAsk(ctx context.Context, price abi.TokenAmount, verifiedP
 	maxPieceSize := DefaultMaxPieceSize
 
 	oldAsk, ok := s.asks[miner]
-	if ok {
+	if ok && oldAsk.Ask != nil {
 		seqno = oldAsk.Ask.SeqNo + 1
 		minPieceSize = oldAsk.Ask.MinPieceSize
 		maxPieceSize = oldAsk.Ask.MaxPieceSize
