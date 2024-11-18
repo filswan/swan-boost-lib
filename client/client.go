@@ -43,6 +43,8 @@ import (
 	"github.com/filswan/go-swan-lib/utils"
 	"github.com/google/uuid"
 	"github.com/ipfs/go-cid"
+	"github.com/ipfs/go-datastore"
+	ds_sync "github.com/ipfs/go-datastore/sync"
 	inet "github.com/libp2p/go-libp2p/core/network"
 	"github.com/mitchellh/go-homedir"
 	"github.com/shopspring/decimal"
@@ -429,8 +431,9 @@ func (client *Client) AllocateDeal(dealConfig *model.DealConfig) (id uint64, err
 
 	var mcids []cid.Cid
 
+	ds := ds_sync.MutexWrap(datastore.NewMapDatastore())
 	for _, msg := range msgs {
-		mcid, sent, err := lib.SignAndPushToMpool(cctx, ctx, gapi, n, msg)
+		mcid, sent, err := lib.SignAndPushToMpool(cctx, ctx, gapi, n, ds, msg)
 		if err != nil {
 			return 0, err
 		}
